@@ -99,7 +99,7 @@ case "${1:-up}" in
 
     curl -s -m 5 "http://127.0.0.1:$PORT/json/version" \
       | python3 -c 'import json,sys; d=json.load(sys.stdin); print("  %s — %s — protocol %s" % (d.get("Android-Package"), d.get("Browser"), d.get("Protocol-Version")))'
-    echo "ready -> http://127.0.0.1:$PORT   (then: node cdp.mjs --repl)"
+    echo "ready -> http://127.0.0.1:$PORT   (legacy unprotected path; use: PORT=$PORT node cdp.mjs --repl)"
     ;;
   direct)
     # The in-app relay needs no adb, but now requires the per-install token.
