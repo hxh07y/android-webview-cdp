@@ -263,7 +263,7 @@ work, and why killing Termux takes the adb connection and any forwards with it.
 
 ```bash
 pkg update && pkg upgrade
-pkg install aapt2 d8 apksigner openjdk-21 python3 zip android-tools nodejs-lts unzip curl
+pkg install aapt2 apksigner openjdk-21 python3 zip android-tools nodejs-lts unzip curl
 ```
 
 Split by what actually needs them — the second group is only needed to *drive* it:
@@ -271,14 +271,13 @@ Split by what actually needs them — the second group is only needed to *drive*
 | needed for | package | provides |
 |---|---|---|
 | **the build**: `./build.sh` | `aapt2` | resource + manifest compiler |
-| | `d8` | dexer |
 | | `apksigner` | signing |
 | | `openjdk-21` | `javac` and `keytool` (21.0.12 here) |
 | | `zip` | packaging — `build.sh` adds `classes.dex` with `zip`, a *separate* package from `unzip` |
 | | `python3` | the alignment check inside `build.sh` — build-critical, not a helper |
+| | `curl` | downloads the platform and R8/D8 JARs; also used by relay/HTTP checks |
 | **installing and driving** | `android-tools` | `adb` 1.0.41 / 35.0.2 |
 | | `nodejs-lts` | `node` — needs **22+** for the built-in `WebSocket` that `cdp.mjs` uses |
-| | `curl` | the relay/HTTP checks in the scripts |
 | | `unzip` | extracting the platform jar |
 
 `aidl` is **not** needed here.
@@ -286,12 +285,15 @@ Split by what actually needs them — the second group is only needed to *drive*
 ### The platform jar (27 MB, not in this repo)
 
 ```bash
-curl -LO https://dl.google.com/android/repository/platform-36_r02.zip   # HTTP 200, verified
-unzip -j platform-36_r02.zip android-36/android.jar -d sdk/platforms/android-36/
+curl -LO https://dl.google.com/android/repository/platform-34-ext7_r03.zip   # HTTP 200, verified
+unzip -j platform-34-ext7_r03.zip android-34/android.jar -d sdk/platforms/android-34/
 ```
 
-Sanity check: that jar is ~27,768,000 bytes. `build.sh` looks for it at
-`sdk/platforms/android-36/android.jar`.
+Sanity check: that jar is ~27,768,000 bytes.
+
+`build.sh` expects the platform JAR at `sdk/platforms/android-34/android.jar`.
+
+`build.sh` downloads the official R8/D8 9.5.32 JAR automatically when needed and verifies its SHA-256 checksum. The R8/D8 JAR is kept locally under `tools/` and is not committed to the repository.
 
 ### Wireless ADB, from Termux on the same device
 
@@ -536,7 +538,7 @@ On this phone it failed — correctly, and usefully:
 
 ```
 == android platform jar
-  FAIL  sdk/platforms/android-36/android.jar missing (27 MB platform jar, deliberately not in the repo)
+  FAIL  sdk/platforms/android-34/android.jar missing (27 MB platform jar, deliberately not in the repo)
 
 == adb
   FAIL  no device connected
@@ -544,7 +546,7 @@ On this phone it failed — correctly, and usefully:
         Developer options → Wireless debugging → on → 'Pair device with pairing code'.
 
 Do this next:
-  1. curl -LO https://dl.google.com/android/repository/platform-36_r02.zip && unzip -j …
+  1. curl -LO https://dl.google.com/android/repository/platform-34-ext7_r03.zip && unzip -j …
   2. adb pair <ip>:<pair-port>     # once per device; the code is on the Wireless debugging screen
   3. adb connect <ip>:<connect-port>   # changes every time Wireless debugging is toggled; 127.0.0.1:<port> works on-device
 

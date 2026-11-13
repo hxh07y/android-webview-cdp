@@ -29,8 +29,8 @@ cd "$(dirname "$0")" || exit 1
 
 PKG=app.so7o.webview
 ACTIVITY="$PKG/.MainActivity"
-JAR_REL="sdk/platforms/android-36/android.jar"
-JAR_URL="https://dl.google.com/android/repository/platform-36_r02.zip"
+JAR_REL="sdk/platforms/android-34/android.jar"
+JAR_URL="https://dl.google.com/android/repository/platform-34-ext7_r03.zip"
 ADB="${ADB:-adb}"
 
 MODE=full
@@ -73,11 +73,11 @@ fi
 # ---------------------------------------------------------------- 2. tools
 step "build tools"
 declare -A PKG_FOR=(
-  [aapt2]=aapt2 [d8]=d8 [apksigner]=apksigner [javac]=openjdk-21 [keytool]=openjdk-21
+  [aapt2]=aapt2 [apksigner]=apksigner [javac]=openjdk-21 [keytool]=openjdk-21
   [adb]=android-tools [node]=nodejs-lts [python3]=python3 [zip]=zip [unzip]=unzip [curl]=curl
 )
 MISSING_CMDS=(); MISSING_PKGS=()
-for c in aapt2 d8 apksigner javac keytool adb node python3 zip unzip curl; do
+for c in aapt2 apksigner javac keytool adb node python3 zip unzip curl; do
     if command -v "$c" >/dev/null 2>&1; then
         case "$c" in javac|keytool) ok "$c ($(javac -version 2>&1 | awk '{print $2}'))";; *) ok "$c";; esac
     else
@@ -111,13 +111,13 @@ if [ -f "$JAR_REL" ]; then
     ok "$JAR_REL ($(du -h "$JAR_REL" | cut -f1))"
 elif [ "$MODE" = check ]; then
     bad "$JAR_REL missing (27 MB platform jar, deliberately not in the repo)"
-    fix "curl -LO $JAR_URL && unzip -j platform-36_r02.zip android-36/android.jar -d sdk/platforms/android-36/"
+    fix "curl -LO $JAR_URL && unzip -j platform-34-ext7_r03.zip android-34/android.jar -d sdk/platforms/android-34/"
 else
     info "downloading $JAR_URL (~27 MB)"
-    if curl -L --fail -o platform-36_r02.zip "$JAR_URL" \
-       && mkdir -p sdk/platforms/android-36 \
-       && unzip -o -j platform-36_r02.zip android-36/android.jar -d sdk/platforms/android-36/ >/dev/null \
-       && rm -f platform-36_r02.zip; then
+    if curl -L --fail -o platform-34-ext7_r03.zip "$JAR_URL" \
+       && mkdir -p sdk/platforms/android-34 \
+       && unzip -o -j platform-34-ext7_r03.zip android-34/android.jar -d sdk/platforms/android-34/ >/dev/null \
+       && rm -f platform-34-ext7_r03.zip; then
         ok "extracted to $JAR_REL ($(du -h "$JAR_REL" | cut -f1))"
     else
         bad "download/extract failed — fetch $JAR_URL by hand (see README)"

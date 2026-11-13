@@ -1,19 +1,32 @@
 #!/data/data/com.termux/files/usr/bin/bash
 # Hand-rolled Android build for Termux/aarch64.
-# No Gradle, no Android SDK install: aapt2 -> javac -> d8 -> alignment check -> apksigner.
-# No aidl, no external jars, and assets/ is linked in (-A).
+# No Gradle: aapt2 -> javac -> R8/D8 -> alignment check -> apksigner.
+# No aidl; R8/D8 is downloaded and checksum-verified when needed.
 # aapt2 -> javac -> d8 -> package -> alignment check -> apksigner
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
-ANDROID_JAR="$ROOT/sdk/platforms/android-36/android.jar"
+ANDROID_JAR="$ROOT/sdk/platforms/android-34/android.jar"
 [ -f "$ANDROID_JAR" ] || {
   echo "missing $ANDROID_JAR (27 MB, deliberately not in the repo)." >&2
   echo "Get it with:  ./setup.sh    — or by hand:" >&2
-  echo "  curl -LO https://dl.google.com/android/repository/platform-36_r02.zip" >&2
-  echo "  unzip -j platform-36_r02.zip android-36/android.jar -d sdk/platforms/android-36/" >&2
+  echo "  curl -LO https://dl.google.com/android/repository/platform-34-ext7_r03.zip" >&2
+  echo "  unzip -j platform-34-ext7_r03.zip android-34/android.jar -d sdk/platforms/android-34/" >&2
   exit 1
 }
+
+R8_VERSION="9.5.32"
+R8_JAR="$ROOT/tools/r8-$R8_VERSION.jar"
+R8_URL="https://dl.google.com/dl/android/maven2/com/android/tools/r8/$R8_VERSION/r8-$R8_VERSION.jar"
+R8_SHA256="7c7b67be3069d395cdfbdea4799ffd04d75d81ccecf3d01a78df37b1f5843298"
+
+if [ ! -f "$R8_JAR" ]; then
+  echo "Downloading R8 $R8_VERSION..."
+  mkdir -p "$ROOT/tools"
+  curl -fL "$R8_URL" -o "$R8_JAR"
+fi
+
+echo "$R8_SHA256  $R8_JAR" | sha256sum -c -
 
 BUILD="$ROOT/build"
 OUT="$ROOT/out"
@@ -67,7 +80,7 @@ javac \
 
 echo "==> 4/5 d8"
 find "$BUILD/classes" -name '*.class' > "$BUILD/inputs.txt"
-d8 --lib "$ANDROID_JAR" --min-api "$MIN_SDK" --output "$BUILD/dex" @"$BUILD/inputs.txt"
+java -cp "$R8_JAR" com.android.tools.r8.D8 --lib "$ANDROID_JAR" --min-api "$MIN_SDK" --output "$BUILD/dex" @"$BUILD/inputs.txt"
 
 cp "$BUILD/base.apk" "$OUT/so7o-webview-unsigned.apk"
 cd "$BUILD/dex" && zip -q -X "$OUT/so7o-webview-unsigned.apk" classes.dex
