@@ -987,8 +987,9 @@ exposed through the page's JavaScript bridge.
    node cdp.mjs --list
    ```
 
-The CDP client reads the token file automatically. You can override it with `CDP_TOKEN` or
-`CDP_TOKEN_FILE`. The token remains stable across app restarts and updates. Clearing app data or
+The CDP client reads the token file automatically and uses only the authenticated 9334 relay by
+default. You can override the token with `CDP_TOKEN` or `CDP_TOKEN_FILE`. The old ADB-forward
+port 9333 is deliberately not an automatic fallback; opt into it explicitly with `PORT=9333`. The token remains stable across app restarts and updates. Clearing app data or
 reinstalling the app generates a new token, so repeat the setup.
 
 - Requests to `127.0.0.1:9334` without the token receive HTTP 401 before the relay opens the
@@ -996,7 +997,8 @@ reinstalling the app generates a new token, so repeat the setup.
 - Treat the token like a password. Do not paste it into web pages, issue reports, or chats.
 - The relay remains bound to `127.0.0.1`; it is not exposed on the LAN.
 - **The legacy ADB-forward path on port 9333 bypasses this relay and is not token-protected.**
-  Prefer `./cdp-webview.sh direct` and port 9334 for the authenticated path.
+  Prefer `./cdp-webview.sh direct` and port 9334 for the authenticated path. `cdp.mjs` will not
+silently fall back to port 9333; opting into that legacy route requires `PORT=9333`.
 - Anyone holding the token can fully drive the page — read and mutate the DOM, run arbitrary JS,
   read cookies and `localStorage`, and navigate.
 - The Java bridge currently exposes only `ping`, `info`, and `toast`. Keep it small and never

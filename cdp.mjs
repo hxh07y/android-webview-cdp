@@ -18,7 +18,7 @@
 //   node cdp.mjs --reset-device                  drop the override
 //   node cdp.mjs --repl                          interactive session (.help for meta commands)
 //
-//   PORT=9334 node cdp.mjs …                pin the endpoint (default: try 9334, then 9333)
+//   PORT=9333 node cdp.mjs …                opt into the legacy, unprotected ADB-forward path
 //   DEBUG=1 node cdp.mjs …                  also stream CDP events (console, loads, …)
 //
 // Actions run in the order above (nav → wait → click → type → key → expression → shot),
@@ -30,7 +30,7 @@ import readline from 'node:readline';
 const PORT = process.env.PORT || null;
 // Relay (in-app) first, then the adb-forwarded port. Both are 127.0.0.1 on the
 // device, so whichever path is up wins; set PORT to pin one explicitly.
-const CANDIDATE_PORTS = PORT ? [PORT] : [9334, 9333];
+const CANDIDATE_PORTS = PORT ? [PORT] : [9334];
 let BASE = `http://127.0.0.1:${CANDIDATE_PORTS[0]}`;
 const TIMEOUT = Number(process.env.CDP_TIMEOUT || 15000);
 
