@@ -203,6 +203,8 @@ elif ! "$ADB" devices 2>/dev/null | awk 'NR>1 && $2=="device"' | grep -q .; then
 else
     "$ADB" shell am start -n "$ACTIVITY" >/dev/null 2>&1 || true
     TOKEN_FILE="${CDP_TOKEN_FILE:-$HOME/.config/so7o-webview/cdp-token}"
+    HAD_TOKEN=no
+    [ -s "$TOKEN_FILE" ] && HAD_TOKEN=yes
     if [ ! -s "$TOKEN_FILE" ]; then
         info "copy the CDP token from the app dialog, then paste it when prompted"
         if [ -t 0 ]; then
@@ -214,8 +216,6 @@ else
     TOKEN=""
     [ -s "$TOKEN_FILE" ] && TOKEN="$(tr -d '\\r\\n' < "$TOKEN_FILE")"
     UP=no
-    HAD_TOKEN=no
-    [ -s "$TOKEN_FILE" ] && HAD_TOKEN=yes
     if [[ "$TOKEN" =~ ^[0-9a-fA-F]{64}$ ]]; then
         for _ in $(seq 1 20); do
             if [ "$(curl -s -m 2 -o /dev/null -w '%{http_code}' "http://127.0.0.1:9334/json/version?token=$TOKEN" 2>/dev/null)" = "200" ]; then UP=yes; break; fi
