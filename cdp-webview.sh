@@ -31,9 +31,9 @@ read_token() {
 }
 
 auth_url() {
-  local p="$1" t
+  local p="$1" endpoint="${2:-version}" t
   t="$(read_token)" || return 1
-  printf 'http://127.0.0.1:%s/json/version?token=%s' "$p" "$t"
+  printf 'http://127.0.0.1:%s/json/%s?token=%s' "$p" "$endpoint" "$t"
 }
 
 pid_of() { $ADB shell pidof "$PKG" 2>/dev/null | tr -d '\r' | awk '{print $1}'; }
@@ -106,7 +106,7 @@ case "${1:-up}" in
       echo "No valid token saved. Open the app, tap Copy token, then run '$0 auth'." >&2
       exit 1
     }
-    if curl -s -m 4 -o /dev/null "$URL"; then
+    if curl -fsS -m 4 -o /dev/null "$URL"; then
       echo "authenticated relay UP on 127.0.0.1:9334 (no adb forward involved)"
       curl -s -m 5 "$URL" \
         | python3 -c 'import json,sys; d=json.load(sys.stdin); print("  %s — %s" % (d.get("Android-Package"), d.get("Browser")))'
@@ -127,7 +127,7 @@ case "${1:-up}" in
     ;;
   info)
     TMP="${TMPDIR:-/tmp}/so7o-webview-targets.json"
-    if [ "$PORT" = "9334" ]; then URL="$(auth_url "$PORT")"; else URL="http://127.0.0.1:$PORT/json/list"; fi
+    if [ "$PORT" = "9334" ]; then URL="$(auth_url "$PORT" list)"; else URL="http://127.0.0.1:$PORT/json/list"; fi
     [ -n "${URL:-}" ] || { echo "Missing token; run '$0 auth'." >&2; exit 1; }
     curl -s -m 5 "$URL" > "$TMP"
     python3 - "$TMP" <<'PY'
