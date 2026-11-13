@@ -5,6 +5,7 @@ import android.app.AlertDialog;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.SharedPreferences;
 import android.content.Intent;
 import android.os.Bundle;
@@ -93,11 +94,14 @@ public class MainActivity extends Activity {
         new AlertDialog.Builder(this)
                 .setTitle("CDP access token")
                 .setView(tokenView)
-                .setPositiveButton("Copy token", (dialog, which) -> {
-                    ClipboardManager clipboard = (ClipboardManager)
-                            getSystemService(Context.CLIPBOARD_SERVICE);
-                    clipboard.setPrimaryClip(ClipData.newPlainText("CDP access token", token));
-                    Toast.makeText(this, "CDP token copied", Toast.LENGTH_SHORT).show();
+                .setPositiveButton("Copy token", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        ClipboardManager clipboard = (ClipboardManager)
+                                getSystemService(Context.CLIPBOARD_SERVICE);
+                        clipboard.setPrimaryClip(ClipData.newPlainText("CDP access token", token));
+                        Toast.makeText(MainActivity.this, "CDP token copied", Toast.LENGTH_SHORT).show();
+                    }
                 })
                 .setNegativeButton("Close", null)
                 .show();
