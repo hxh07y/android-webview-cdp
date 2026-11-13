@@ -214,7 +214,7 @@ else
         fi
     fi
     TOKEN=""
-    [ -s "$TOKEN_FILE" ] && TOKEN="$(tr -d '\\r\\n' < "$TOKEN_FILE")"
+    [ -s "$TOKEN_FILE" ] && TOKEN="$(tr -d '\r\n' < "$TOKEN_FILE")"
     UP=no
     if [[ "$TOKEN" =~ ^[0-9a-fA-F]{64}$ ]]; then
         for _ in $(seq 1 20); do
@@ -228,7 +228,7 @@ else
     if [ "$UP" != yes ] && [ "$HAD_TOKEN" = yes ] && [ -t 0 ]; then
         info "saved token did not authenticate; copy the current token from the app and paste it again"
         if bash ./cdp-webview.sh auth; then
-            TOKEN="$(tr -d '\\r\\n' < "$TOKEN_FILE")"
+            TOKEN="$(tr -d '\r\n' < "$TOKEN_FILE")"
             if [[ "$TOKEN" =~ ^[0-9a-fA-F]{64}$ ]]; then
                 for _ in $(seq 1 20); do
                     if [ "$(curl -s -m 2 -o /dev/null -w '%{http_code}' "http://127.0.0.1:9334/json/version?token=$TOKEN" 2>/dev/null)" = "200" ]; then UP=yes; break; fi

@@ -67,7 +67,7 @@ case "${1:-up}" in
     echo
     [[ "$TOKEN" =~ ^[0-9a-fA-F]{64}$ ]] || { echo "Invalid token (expected 64 hex characters)." >&2; exit 1; }
     mkdir -p "$(dirname "$TOKEN_FILE")"
-    (umask 077; printf '%s\\n' "$TOKEN" > "$TOKEN_FILE")
+    (umask 077; printf '%s\n' "$TOKEN" > "$TOKEN_FILE")
     chmod 600 "$TOKEN_FILE"
     echo "Token saved privately to $TOKEN_FILE"
     ;;

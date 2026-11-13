@@ -42,7 +42,7 @@ display_of_app() {
 relay_up() {
     [ -s "$TOKEN_FILE" ] || return 1
     local token
-    token="$(tr -d '\\r\\n' < "$TOKEN_FILE")"
+    token="$(tr -d '\r\n' < "$TOKEN_FILE")"
     [[ "$token" =~ ^[0-9a-fA-F]{64}$ ]] || return 1
     [ "$(curl -s -m 4 -o /dev/null -w '%{http_code}' "http://127.0.0.1:9334/json/version?token=$token" 2>/dev/null || true)" = "200" ]
 }
