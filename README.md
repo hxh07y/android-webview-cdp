@@ -948,24 +948,45 @@ can be off entirely. The relay is bound per *process*, so an Activity recreation
 
 ## Security
 
-**There is no authentication, and WebView debugging is on unconditionally.** `MainActivity`
-calls `WebView.setWebContentsDebuggingEnabled(true)` with no debug-flag guard — that is the whole
-point of the project, so it will not be "fixed". The consequences are worth stating plainly:
+**The in-app relay now requires a per-install access token.** Android generates the token, stores
+it in app-private preferences, and displays it only in a native Android dialog. It is never
+exposed through the page's JavaScript bridge.
 
-- **Anything that can reach the port can fully drive the page** — read and mutate the DOM, run
-  arbitrary JS, read cookies and `localStorage`, navigate, and call whatever the page's Java
-  bridge exposes.
-- **The Java bridge runs Java in the app's process.** Today `so7o.*` is `ping`/`info`/`toast`,
-  which is harmless. Anything added later (file access, intents, clipboard) inherits exactly the
-  same openness. Keep the bridge small, and never put a secret behind it.
-- **The exposure is the device, not the network.** Both the in-app relay and `adb forward` bind
-  `127.0.0.1` only (verified in `/proc/net/tcp`), so nothing is reachable over the LAN.
-- **On the device, that means every app holding `INTERNET`.** There is no token, no origin check
-  and no per-client allowlist — any app that can open a loopback socket can drive the shell and
-  read the result. Treat a running instance as open to every other app on the phone.
-- **Don't leave it running on a device you care about.** `adb shell am force-stop
-  app.so7o.webview` stops everything — process, notification and port. `./cdp-webview.sh down`
-  only removes the adb forward; it does not stop the app.
+### One-time setup
+
+1. Open the So7o WebView app and tap **Copy token** in the native dialog.
+2. In Termux, go to this repository and run:
+
+   ```bash
+   ./cdp-webview.sh auth
+   ```
+
+3. Paste the token when prompted. The script stores it at
+   `~/.config/so7o-webview/cdp-token` with owner-only permissions.
+4. Check the relay and list targets:
+
+   ```bash
+   ./cdp-webview.sh direct
+   node cdp.mjs --list
+   ```
+
+The CDP client reads the token file automatically. You can override it with `CDP_TOKEN` or
+`CDP_TOKEN_FILE`. The token remains stable across app restarts and updates. Clearing app data or
+reinstalling the app generates a new token, so repeat the setup.
+
+- Requests to `127.0.0.1:9334` without the token receive HTTP 401 before the relay opens the
+  WebView DevTools socket. The token is also required on the WebSocket handshake.
+- Treat the token like a password. Do not paste it into web pages, issue reports, or chats.
+- The relay remains bound to `127.0.0.1`; it is not exposed on the LAN.
+- **The legacy ADB-forward path on port 9333 bypasses this relay and is not token-protected.**
+  Prefer `./cdp-webview.sh direct` and port 9334 for the authenticated path.
+- Anyone holding the token can fully drive the page — read and mutate the DOM, run arbitrary JS,
+  read cookies and `localStorage`, and navigate.
+- The Java bridge currently exposes only `ping`, `info`, and `toast`. Keep it small and never
+  add secrets or privileged operations to it.
+- WebView debugging remains enabled unconditionally because remote debugging is the purpose of
+  this app. Stop the app with `adb shell am force-stop app.so7o.webview` when finished if you
+  want to close the DevTools endpoint and foreground service.
 
 ## Gotchas
 

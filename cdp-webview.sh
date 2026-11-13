@@ -20,11 +20,28 @@ PKG=app.so7o.webview
 ACTIVITY="$PKG/.MainActivity"
 PORT="${2:-9333}"
 ADB="${ADB:-adb}"
+TOKEN_FILE="${CDP_TOKEN_FILE:-$HOME/.config/so7o-webview/cdp-token}"
+
+read_token() {
+  [ -f "$TOKEN_FILE" ] || return 1
+  local t
+  t="$(tr -d '\r\n' < "$TOKEN_FILE")"
+  [[ "$t" =~ ^[0-9a-fA-F]{64}$ ]] || return 1
+  printf '%s' "$t"
+}
+
+auth_url() {
+  local p="$1" t
+  t="$(read_token)" || return 1
+  printf 'http://127.0.0.1:%s/json/version?token=%s' "$p" "$t"
+}
 
 pid_of() { $ADB shell pidof "$PKG" 2>/dev/null | tr -d '\r' | awk '{print $1}'; }
 http_code() {
   local p="${1:-$PORT}" c
-  c="$(curl -s -m 4 -o /dev/null -w "%{http_code}" "http://127.0.0.1:$p/json/version" 2>/dev/null || true)"
+  local url
+  url="$(auth_url "$p" 2>/dev/null || printf 'http://127.0.0.1:%s/json/version' "$p")"
+  c="$(curl -s -m 4 -o /dev/null -w "%{http_code}" "$url" 2>/dev/null || true)"
   echo "${c:-000}"
 }
 is_frozen() {
@@ -44,6 +61,15 @@ socket_name() {
 }
 
 case "${1:-up}" in
+  auth)
+    read -r -s -p "Paste the CDP token copied from the app: " TOKEN
+    echo
+    [[ "$TOKEN" =~ ^[0-9a-fA-F]{64}$ ]] || { echo "Invalid token (expected 64 hex characters)." >&2; exit 1; }
+    mkdir -p "$(dirname "$TOKEN_FILE")"
+    (umask 077; printf '%s\\n' "$TOKEN" > "$TOKEN_FILE")
+    chmod 600 "$TOKEN_FILE"
+    echo "Token saved privately to $TOKEN_FILE"
+    ;;
   up)
     # Always (re)start: this both launches a dead app and *unfreezes* one the
     # platform parked in the frozen cgroup while it was in the background.
@@ -75,10 +101,14 @@ case "${1:-up}" in
     echo "ready -> http://127.0.0.1:$PORT   (then: node cdp.mjs --repl)"
     ;;
   direct)
-    # The in-app relay needs no adb, so this is the check that proves it.
-    if curl -s -m 4 -o /dev/null "http://127.0.0.1:9334/json/version"; then
-      echo "relay UP on 127.0.0.1:9334 (no adb forward involved)"
-      curl -s -m 5 http://127.0.0.1:9334/json/version \
+    # The in-app relay needs no adb, but now requires the per-install token.
+    URL="$(auth_url 9334)" || {
+      echo "No valid token saved. Open the app, tap Copy token, then run '$0 auth'." >&2
+      exit 1
+    }
+    if curl -s -m 4 -o /dev/null "$URL"; then
+      echo "authenticated relay UP on 127.0.0.1:9334 (no adb forward involved)"
+      curl -s -m 5 "$URL" \
         | python3 -c 'import json,sys; d=json.load(sys.stdin); print("  %s — %s" % (d.get("Android-Package"), d.get("Browser")))'
       echo "then: node cdp.mjs --list"
     else
@@ -97,7 +127,9 @@ case "${1:-up}" in
     ;;
   info)
     TMP="${TMPDIR:-/tmp}/so7o-webview-targets.json"
-    curl -s -m 5 "http://127.0.0.1:$PORT/json/list" > "$TMP"
+    if [ "$PORT" = "9334" ]; then URL="$(auth_url "$PORT")"; else URL="http://127.0.0.1:$PORT/json/list"; fi
+    [ -n "${URL:-}" ] || { echo "Missing token; run '$0 auth'." >&2; exit 1; }
+    curl -s -m 5 "$URL" > "$TMP"
     python3 - "$TMP" <<'PY'
 import json, sys
 for t in json.load(open(sys.argv[1])):

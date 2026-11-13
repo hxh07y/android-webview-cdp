@@ -24,7 +24,7 @@
 // Actions run in the order above (nav → wait → click → type → key → expression → shot),
 // so one invocation can do a whole sequence.
 
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import readline from 'node:readline';
 
 const PORT = process.env.PORT || null;
@@ -115,8 +115,16 @@ const KEYCODES = {
   PageUp: [33, 'PageUp'], PageDown: [34, 'PageDown'], Space: [32, 'Space'],
 };
 
+let CDP_TOKEN;
+
+function withToken(value) {
+  const url = new URL(value);
+  url.searchParams.set('token', CDP_TOKEN);
+  return url.toString();
+}
+
 function connect(wsUrl) {
-  const ws = new WebSocket(wsUrl);
+  const ws = new WebSocket(withToken(wsUrl));
   let id = 0;
   const pending = new Map();
   let waiters = [];
@@ -181,7 +189,7 @@ async function pageTargets() {
   let lastErr;
   for (const port of CANDIDATE_PORTS) {
     try {
-      list = await (await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(4000) })).json();
+      list = await (await fetch(withToken(`http://127.0.0.1:${port}/json/list`), { signal: AbortSignal.timeout(4000) })).json();
       BASE = `http://127.0.0.1:${port}`;
       break;
     } catch (e) {
@@ -319,9 +327,19 @@ async function shot(c, file) {
 }
 
 // ---------------------------------------------------------------- run
+const tokenFile = process.env.CDP_TOKEN_FILE
+  || `${process.env.HOME || '.'}/.config/so7o-webview/cdp-token`;
+try {
+  CDP_TOKEN = process.env.CDP_TOKEN || readFileSync(tokenFile, 'utf8').trim();
+} catch {
+  throw new Error('CDP token missing. Open the app, copy its token, then run: ./cdp-webview.sh auth');
+}
+if (!/^[0-9a-fA-F]{64}$/.test(CDP_TOKEN)) {
+  throw new Error('Invalid CDP token. Re-enter it with: ./cdp-webview.sh auth');
+}
 const target = await chooseTarget(await pageTargets());
 if (opt.list) {
-  const list = await (await fetch(`${BASE}/json/list`)).json();
+  const list = await (await fetch(withToken(`${BASE}/json/list`))).json();
   console.error(`# via ${BASE}`);
   for (const t of list) console.log(`${t.type}\t${t.id}\t${(t.title || '').slice(0, 40)}\t${(t.url || '').slice(0, 70)}`);
   process.exit(0);

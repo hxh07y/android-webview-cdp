@@ -1,6 +1,11 @@
 package app.so7o.webview;
 
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.Context;
+import android.content.SharedPreferences;
 import android.content.Intent;
 import android.os.Bundle;
 import android.util.Log;
@@ -10,6 +15,9 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Toast;
+import android.widget.TextView;
+
+import java.security.SecureRandom;
 
 /**
  * Minimal WebView shell whose only trick is: remote debugging is on, so the
@@ -39,6 +47,12 @@ public class MainActivity extends Activity {
         // the DevTools socket stops accepting once the app leaves the foreground.
         startForegroundService(new Intent(this, KeepAliveService.class));
 
+        // Per-install token is stored in app-private preferences and shown only
+        // in a native dialog, never through the page's JavaScript bridge.
+        final String cdpToken = getOrCreateCdpToken();
+        RelayServer.setAuthToken(cdpToken);
+        showCdpTokenDialog(cdpToken);
+
         web = new WebView(this);
         setContentView(web, new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -51,8 +65,42 @@ public class MainActivity extends Activity {
         web.addJavascriptInterface(new Bridge(), "so7o");
         web.loadUrl("file:///android_asset/index.html");
 
-        // Publish the DevTools socket on 127.0.0.1 so clients can skip adb forward.
+        // Publish the DevTools socket on authenticated loopback only.
         new RelayServer().start();
+    }
+
+    private String getOrCreateCdpToken() {
+        SharedPreferences prefs = getSharedPreferences("cdp_auth", MODE_PRIVATE);
+        String token = prefs.getString("token", null);
+        if (token != null && token.matches("[0-9a-fA-F]{64}")) return token;
+        byte[] bytes = new byte[32];
+        new SecureRandom().nextBytes(bytes);
+        StringBuilder hex = new StringBuilder(64);
+        for (byte b : bytes) hex.append(String.format(java.util.Locale.US, "%02x", b & 0xff));
+        token = hex.toString();
+        prefs.edit().putString("token", token).apply();
+        return token;
+    }
+
+    private void showCdpTokenDialog(final String token) {
+        TextView tokenView = new TextView(this);
+        tokenView.setText("Copy this private key into Termux using ./cdp-webview.sh auth. "
+                + "The key is required by CDP clients and is not shared with web pages.\n\n"
+                + token);
+        tokenView.setTextIsSelectable(true);
+        tokenView.setPadding(48, 24, 48, 24);
+        tokenView.setTextSize(14);
+        new AlertDialog.Builder(this)
+                .setTitle("CDP access token")
+                .setView(tokenView)
+                .setPositiveButton("Copy token", (dialog, which) -> {
+                    ClipboardManager clipboard = (ClipboardManager)
+                            getSystemService(Context.CLIPBOARD_SERVICE);
+                    clipboard.setPrimaryClip(ClipData.newPlainText("CDP access token", token));
+                    Toast.makeText(this, "CDP token copied", Toast.LENGTH_SHORT).show();
+                })
+                .setNegativeButton("Close", null)
+                .show();
     }
 
     /** In-app channel (page -> Java), independent of CDP. */
