@@ -69,13 +69,18 @@ aapt2 link \
 
 echo "==> 3/5 javac"
 find "$ROOT/java" "$BUILD/gen" -name '*.java' > "$BUILD/sources.txt"
-javac \
+if ! javac \
   -source 8 -target 8 \
   -bootclasspath "$ANDROID_JAR" \
   -encoding UTF-8 \
   -nowarn \
   -d "$BUILD/classes" \
-  @"$BUILD/sources.txt" 2>&1 | grep -viE "bootstrap class path|source value 8|target value 8|deprecat" || true
+  @"$BUILD/sources.txt" > "$BUILD/javac.log" 2>&1; then
+  cat "$BUILD/javac.log" >&2
+  echo "javac failed; stopping build." >&2
+  exit 1
+fi
+grep -viE "bootstrap class path|source value 8|target value 8|deprecat" "$BUILD/javac.log" || true
 [ -d "$BUILD/classes/app/so7o/webview" ] || { echo "javac produced no classes"; exit 1; }
 
 echo "==> 4/5 d8"
