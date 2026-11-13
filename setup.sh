@@ -202,13 +202,26 @@ elif ! "$ADB" devices 2>/dev/null | awk 'NR>1 && $2=="device"' | grep -q .; then
     bad "no device — cannot verify"
 else
     "$ADB" shell am start -n "$ACTIVITY" >/dev/null 2>&1 || true
+    TOKEN_FILE="${CDP_TOKEN_FILE:-$HOME/.config/so7o-webview/cdp-token}"
+    if [ ! -s "$TOKEN_FILE" ]; then
+        info "copy the CDP token from the app dialog, then paste it when prompted"
+        if [ -t 0 ]; then
+            bash ./cdp-webview.sh auth || bad "CDP token setup failed"
+        else
+            bad "CDP token missing — run ./cdp-webview.sh auth interactively"
+        fi
+    fi
+    TOKEN=""
+    [ -s "$TOKEN_FILE" ] && TOKEN="$(tr -d '\\r\\n' < "$TOKEN_FILE")"
     UP=no
-    for _ in $(seq 1 20); do
-        if [ "$(curl -s -m 2 -o /dev/null -w '%{http_code}' http://127.0.0.1:9334/json/version 2>/dev/null)" = "200" ]; then UP=yes; break; fi
-        sleep 0.5
-    done
+    if [[ "$TOKEN" =~ ^[0-9a-fA-F]{64}$ ]]; then
+        for _ in $(seq 1 20); do
+            if [ "$(curl -s -m 2 -o /dev/null -w '%{http_code}' "http://127.0.0.1:9334/json/version?token=$TOKEN" 2>/dev/null)" = "200" ]; then UP=yes; break; fi
+            sleep 0.5
+        done
+    fi
     if [ "$UP" = yes ]; then
-        ok "relay answering on 127.0.0.1:9334 (no adb forward needed)"
+        ok "authenticated relay answering on 127.0.0.1:9334 (no adb forward needed)"
         TITLE="$(node cdp.mjs 'document.title' 2>/dev/null | tail -1)"
         if [ "$TITLE" = "So7o Android Webview Shell" ]; then
             ok "CDP round-trip: document.title = \"$TITLE\""
@@ -246,7 +259,7 @@ else
             bad "CDP answered but document.title was '$TITLE'"
         fi
     else
-        bad "relay not answering — is the app running? adb logcat -s So7oWebViewRelay"
+        bad "authenticated relay not answering — check token setup and app status (adb logcat -s So7oWebViewRelay)"
     fi
 fi
 

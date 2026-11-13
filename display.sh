@@ -33,13 +33,18 @@ PKG=app.so7o.webview
 ACTIVITY="$PKG/.MainActivity"
 OVERLAY_SPEC="${OVERLAY_SPEC:-1080x2340/420}"
 ADB="${ADB:-adb}"
+TOKEN_FILE="${CDP_TOKEN_FILE:-$HOME/.config/so7o-webview/cdp-token}"
 
 display_of_app() {
     $ADB shell dumpsys activity activities 2>/dev/null \
         | awk -v pkg="$PKG" '/Display #/{d=$2} index($0, pkg "/.MainActivity"){print d; exit}'
 }
 relay_up() {
-    [ "$(curl -s -m 4 -o /dev/null -w '%{http_code}' http://127.0.0.1:9334/json/version 2>/dev/null || true)" = "200" ]
+    [ -s "$TOKEN_FILE" ] || return 1
+    local token
+    token="$(tr -d '\\r\\n' < "$TOKEN_FILE")"
+    [[ "$token" =~ ^[0-9a-fA-F]{64}$ ]] || return 1
+    [ "$(curl -s -m 4 -o /dev/null -w '%{http_code}' "http://127.0.0.1:9334/json/version?token=$token" 2>/dev/null || true)" = "200" ]
 }
 relay_line() {
     if relay_up; then printf 'relay        UP on 127.0.0.1:9334 (no adb forward)\n'

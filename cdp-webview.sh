@@ -2,7 +2,8 @@
 # Wire Termux to the So7o Android WebView shell's DevTools socket.
 #
 #   ./cdp-webview.sh up [port]    (re)launch + unfreeze the app, adb forward, verify
-#   ./cdp-webview.sh direct       check the in-app relay on 127.0.0.1:9334 (no adb at all)
+#   ./cdp-webview.sh auth         save the token copied from the app
+#   ./cdp-webview.sh direct       check the authenticated relay on 127.0.0.1:9334 (no adb)
 #   ./cdp-webview.sh status [port]  pid, frozen cgroup, forward, HTTP reachability
 #   ./cdp-webview.sh info [port]    list page targets
 #   ./cdp-webview.sh down [port]    remove the forward

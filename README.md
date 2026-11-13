@@ -31,7 +31,10 @@ is the long version:
 ```bash
 gh repo clone jan5o7o/android-webview-cdp && cd android-webview-cdp
 bash ./setup.sh --pre-install-checkup     # read-only: says exactly what to fix, if anything
-bash ./setup.sh                           # installs, builds, installs, launches, verifies
+bash ./setup.sh                           # installs, builds, launches; prompts for the app token
+# If you build/install separately: open the app, tap Copy token, then run:
+./cdp-webview.sh auth                     # paste token; saved privately for Termux
+./cdp-webview.sh direct                   # verify authenticated relay
 node cdp.mjs --repl                       # drive the page
 ```
 
@@ -49,11 +52,14 @@ needs adb at all**, because the app serves CDP on `127.0.0.1:9334` itself.
 ## How it works
 
 ```
-Termux (node / python / curl)                     the app process (pid N)
+Termux (Node / Python / curl)                       the app process (pid N)
   │                                                     │
-  │ HTTP + WS on 127.0.0.1:9333                         │  WebView DevTools server
+  │ HTTP + WebSocket + token on 127.0.0.1:9334          │  WebView DevTools server
   ▼                                                     ▼
-adb server (running INSIDE Termux) ── adb forward ──► @webview_devtools_remote_N
+RelayServer checks token ───────────────────────────► @webview_devtools_remote_N
+
+Optional legacy path: adb forward tcp:9333 localabstract:webview_devtools_remote_N
+(the ADB-forward path bypasses the authenticated relay).
 ```
 
 `WebView.setWebContentsDebuggingEnabled(true)` makes WebView expose CDP on an
@@ -74,7 +80,8 @@ connected while they were recorded.
 The first check is what is on the other end of the port:
 
 ```console
-$ curl -s 127.0.0.1:9334/json/version
+$ TOKEN="$(cat ~/.config/so7o-webview/cdp-token)"
+$ curl -s "127.0.0.1:9334/json/version?token=$TOKEN"
 {
    "Android-Package": "app.so7o.webview",
    "Browser": "Chrome/153.0.8010.36",
@@ -352,7 +359,7 @@ Each step has an unambiguous check — useful when an agent is driving:
 | build | `ls -l out/so7o-webview.apk` | ~20 KB file |
 | installed | `adb shell pm list packages \| grep app.so7o.webview` | `package:app.so7o.webview` |
 | running | `adb shell pidof app.so7o.webview` | a pid |
-| relay | `./cdp-webview.sh direct` | `relay UP on 127.0.0.1:9334` |
+| relay | `./cdp-webview.sh direct` | `authenticated relay UP on 127.0.0.1:9334` |
 | CDP | `node cdp.mjs 'document.title'` | `So7o Android Webview Shell` |
 | input | `node cdp.mjs --click 'text=tap me'` then `node cdp.mjs '__so7o.taps()'` | counter +1 |
 | real site | `node cdp.mjs --nav https://news.ycombinator.com/news --wait '.titleline' 'document.title'` | `Hacker News` |
@@ -430,11 +437,21 @@ npm init -y && PUPPETEER_SKIP_DOWNLOAD=1 npm i puppeteer-core
 ```
 
 ```js
+import { readFileSync } from 'node:fs';
 import puppeteer from 'puppeteer-core';
 
+const token = readFileSync(
+  `${process.env.HOME}/.config/so7o-webview/cdp-token`, 'utf8'
+).trim();
+const version = await (await fetch(
+  `http://127.0.0.1:9334/json/version?token=${token}`
+)).json();
+const ws = new URL(version.webSocketDebuggerUrl);
+ws.searchParams.set('token', token);
+
 const browser = await puppeteer.connect({
-  browserURL: 'http://127.0.0.1:9334',   // the relay — no adb
-  defaultViewport: null,                  // keep the WebView's real size
+  browserWSEndpoint: ws.toString(),        // authenticated relay — no adb
+  defaultViewport: null,                   // keep the WebView's real size
 });
 
 // Pick the LIVE target: the list accumulates one entry per WebView ever created.
@@ -660,7 +677,7 @@ flow returns the app to its own page afterwards, so it is not left on someone el
 |---|---|
 | `java/app/so7o/webview/MainActivity.java` | debug flag, WebView, `so7o` JS bridge (`ping`/`info`/`toast`) |
 | `java/app/so7o/webview/KeepAliveService.java` | foreground service — keeps the process out of the frozen cgroup |
-| `java/app/so7o/webview/RelayServer.java` | publishes the socket on `127.0.0.1:9334` (no adb needed) |
+| `java/app/so7o/webview/RelayServer.java` | authenticates requests before publishing the socket on `127.0.0.1:9334` |
 | `assets/index.html` | demo page; exposes `window.__so7o` as a stable CDP handle |
 | `build.sh` | on-device build: aapt2 → javac → d8 → alignment check → apksigner |
 | `cdp-webview.sh` | pid discovery, freeze handling, `adb forward`, verification |
@@ -845,8 +862,8 @@ adb shell am force-stop app.so7o.webview    # only this stops the app itself
   `app display` empty — that combination is expected.
 - **Only `force-stop` is a real stop**: it takes the process, the notification and the
   listening port with it.
-- **An idle relay is not exposed**: the port binds `127.0.0.1` only, so nothing off-device
-  can reach it (other apps on the phone could — see the gotchas).
+- **The relay is loopback-only and token-protected**: it binds `127.0.0.1`, and requests without
+  the per-install token are rejected. The separate legacy ADB-forward path on 9333 is not protected.
 - **The `overlay_display_devices` setting is persisted.** `overlay-off` deletes it; until then
   the simulated display is recreated after a reboot.
 - The relay port is released when the process dies. Nothing else on the device is modified by
@@ -1016,9 +1033,9 @@ reinstalling the app generates a new token, so repeat the setup.
   `SYSTEM_ALERT_WINDOW`.
 - **`Target.createTarget` / `/json/new` are blocked on Android** — attach to an
   existing page target, don't try to create one (same restriction as Chrome).
-- The forward binds **127.0.0.1 only** (verified in `/proc/net/tcp`), so it is not
-  on the LAN — but any app on the phone holding `INTERNET` could drive the page.
-  `./cdp-webview.sh down` when done.
+- The authenticated relay on 9334 binds **127.0.0.1 only** and rejects requests without the
+  per-install token. The legacy ADB-forward path on 9333 is loopback-only but bypasses token
+  authentication; prefer the relay. `./cdp-webview.sh down` removes the legacy forward.
 
 ## Not done yet (deliberately)
 
