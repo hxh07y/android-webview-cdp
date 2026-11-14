@@ -134,7 +134,7 @@ public class RelayServer {
      */
     private byte[] stripAuthToken(byte[] rawHeaders) throws IOException {
         String headers = new String(rawHeaders, StandardCharsets.ISO_8859_1);
-        int lineEnd = headers.indexOf("\\r\\n");
+        int lineEnd = headers.indexOf("\r\n");
         if (lineEnd <= 0) throw new IOException("invalid HTTP request line");
 
         String requestLine = headers.substring(0, lineEnd);
