@@ -91,7 +91,10 @@ public class RelayServer {
             final InputStream localIn = local.getInputStream();
             final OutputStream localOut = local.getOutputStream();
 
-            localOut.write(headers);
+            // The token is for this relay only. Remove it from the request
+            // target before forwarding to Chromium's DevTools HTTP/WebSocket
+            // server, which rejects unknown query parameters on WebSocket URLs.
+            localOut.write(stripAuthToken(headers));
             localOut.flush();
             Thread back = new Thread(new Runnable() {
                 @Override public void run() { pump(localIn, clientOut, client); }
@@ -123,6 +126,44 @@ public class RelayServer {
             if (matched == 4) return out.toByteArray();
         }
         throw new IOException("HTTP headers too large");
+    }
+
+    /**
+     * Removes the relay-only token query parameter from the HTTP request line.
+     * Authorization must be checked against the original headers first.
+     */
+    private byte[] stripAuthToken(byte[] rawHeaders) throws IOException {
+        String headers = new String(rawHeaders, StandardCharsets.ISO_8859_1);
+        int lineEnd = headers.indexOf("\\r\\n");
+        if (lineEnd <= 0) throw new IOException("invalid HTTP request line");
+
+        String requestLine = headers.substring(0, lineEnd);
+        int firstSpace = requestLine.indexOf(' ');
+        int secondSpace = firstSpace < 0 ? -1 : requestLine.indexOf(' ', firstSpace + 1);
+        if (firstSpace <= 0 || secondSpace <= firstSpace + 1) {
+            throw new IOException("invalid HTTP request line");
+        }
+
+        String target = requestLine.substring(firstSpace + 1, secondSpace);
+        int queryStart = target.indexOf('?');
+        if (queryStart < 0) return rawHeaders;
+
+        StringBuilder cleanQuery = new StringBuilder();
+        String query = target.substring(queryStart + 1);
+        for (String param : query.split("&")) {
+            int equals = param.indexOf('=');
+            String name = equals < 0 ? param : param.substring(0, equals);
+            if ("token".equals(name)) continue;
+            if (cleanQuery.length() > 0) cleanQuery.append('&');
+            cleanQuery.append(param);
+        }
+
+        String cleanTarget = target.substring(0, queryStart);
+        if (cleanQuery.length() > 0) cleanTarget += "?" + cleanQuery;
+        String cleanLine = requestLine.substring(0, firstSpace + 1)
+                + cleanTarget + requestLine.substring(secondSpace);
+        String cleanHeaders = cleanLine + headers.substring(lineEnd);
+        return cleanHeaders.getBytes(StandardCharsets.ISO_8859_1);
     }
 
     private boolean isAuthorized(byte[] rawHeaders) {
