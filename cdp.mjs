@@ -214,6 +214,22 @@ async function pageTargets() {
  * dead targets behind. Picking `list[0]` would then read one page and click
  * another, so probe each and prefer the one that is actually visible.
  */
+async function closeProbeWebSocket(ws) {
+  if (ws.readyState === WebSocket.CLOSED) return;
+  await new Promise((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve();
+    };
+    const timer = setTimeout(finish, 1500);
+    ws.addEventListener('close', finish, { once: true });
+    try { ws.close(); } catch { finish(); }
+  });
+}
+
 async function chooseTarget(pages) {
   if (opt.target) {
     const pinned = pages.find((p) => p.id === opt.target);
@@ -231,7 +247,9 @@ async function chooseTarget(pages) {
     } catch (e) {
       // dead target — expected after an Activity recreation
     } finally {
-      try { probe.ws.close(); } catch (e) {}
+      // Do not open the active session until Chromium and the relay have
+      // completed the probe WebSocket close handshake.
+      await closeProbeWebSocket(probe.ws);
     }
   }
   if (firstLive) {
