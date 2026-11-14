@@ -14,6 +14,7 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /** Token-authenticated loopback relay for the WebView DevTools socket. */
 public class RelayServer {
@@ -65,6 +66,7 @@ public class RelayServer {
 
     private void pipe(final Socket client) {
         LocalSocket local = new LocalSocket();
+        boolean streamsHandedOff = false;
         try {
             client.setTcpNoDelay(true);
             client.setSoTimeout(5000);
@@ -96,17 +98,35 @@ public class RelayServer {
             // server, which rejects unknown query parameters on WebSocket URLs.
             localOut.write(stripAuthToken(headers));
             localOut.flush();
+            // Each direction is a separate stream. On clean EOF, half-close
+            // only the destination output and let the reverse direction finish.
+            final AtomicInteger completedDirections = new AtomicInteger(0);
+            final Runnable closeWhenBothComplete = new Runnable() {
+                @Override public void run() {
+                    if (completedDirections.incrementAndGet() == 2) {
+                        closeQuietly(client);
+                        closeQuietly(local);
+                    }
+                }
+            };
             Thread back = new Thread(new Runnable() {
-                @Override public void run() { pump(localIn, clientOut, client); }
+                @Override public void run() {
+                    pump(localIn, clientOut, client, local, true, closeWhenBothComplete);
+                }
             }, "so7o-relay-back");
             back.setDaemon(true);
             back.start();
-            pump(clientIn, localOut, local);
+            streamsHandedOff = true;
+            pump(clientIn, localOut, client, local, false, closeWhenBothComplete);
         } catch (IOException e) {
             Log.w(TAG, "connection dropped: " + e.getMessage());
         } finally {
-            closeQuietly(client);
-            closeQuietly(local);
+            // Once the pumps own the streams, they alone decide when both
+            // directions have finished. Closing here would abort the handshake.
+            if (!streamsHandedOff) {
+                closeQuietly(client);
+                closeQuietly(local);
+            }
         }
     }
 
@@ -191,20 +211,37 @@ public class RelayServer {
                 supplied.getBytes(StandardCharsets.US_ASCII));
     }
 
-    private void pump(InputStream in, OutputStream out, Object closeOnEnd) {
+    private void pump(InputStream in, OutputStream out,
+                      Socket client, LocalSocket local, boolean towardClient,
+                      Runnable onCleanEof) {
         byte[] buf = new byte[16 * 1024];
         try {
             int n;
-            while ((n = in.read(buf)) > 0) {
+            while ((n = in.read(buf)) != -1) {
+                if (n == 0) continue;
                 out.write(buf, 0, n);
                 out.flush();
             }
         } catch (IOException e) {
-            // normal end of stream / client vanished
-        } finally {
-            if (closeOnEnd instanceof Socket) closeQuietly((Socket) closeOnEnd);
-            else closeQuietly((LocalSocket) closeOnEnd);
+            // An I/O failure is not a graceful half-close; tear down both sides.
+            Log.w(TAG, "relay stream failed: " + e.getMessage());
+            closeQuietly(client);
+            closeQuietly(local);
+            return;
         }
+
+        // Preserve the reverse direction until it also reaches EOF. This allows
+        // the WebSocket close handshake to finish in both directions.
+        try {
+            if (towardClient) client.shutdownOutput();
+            else local.shutdownOutput();
+        } catch (IOException e) {
+            Log.w(TAG, "relay half-close failed: " + e.getMessage());
+            closeQuietly(client);
+            closeQuietly(local);
+            return;
+        }
+        onCleanEof.run();
     }
 
     private static String devtoolsSocketName() {
