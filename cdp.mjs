@@ -118,6 +118,10 @@ const KEYCODES = {
 let CDP_TOKEN;
 
 function withToken(value) {
+  // The raw WebView DevTools endpoint (legacy ADB forward) does not accept
+  // relay authentication query parameters. Keep token auth on the in-app
+  // relay, but leave the explicitly opted-in 9333 path untouched.
+  if (PORT === '9333') return value;
   const url = new URL(value);
   url.searchParams.set('token', CDP_TOKEN);
   return url.toString();
