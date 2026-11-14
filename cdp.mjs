@@ -234,26 +234,37 @@ async function chooseTarget(pages) {
   if (opt.target) {
     const pinned = pages.find((p) => p.id === opt.target);
     if (!pinned) throw new Error(`no page target with id ${opt.target}`);
-    return pinned;
+    return { page: pinned, connection: connect(pinned.webSocketDebuggerUrl) };
   }
+
+  // Keep the successful probe connection and use it for the actual session.
+  // Opening a second WebSocket immediately after closing the probe is fragile
+  // with WebView's DevTools socket and adds no value once the target is known.
   let firstLive = null;
   for (const p of pages) {
     const probe = connect(p.webSocketDebuggerUrl);
+    let keepConnection = false;
     try {
       await Promise.race([probe.ready, new Promise((_, rej) => setTimeout(() => rej(new Error('no ws')), 2500))]);
       const r = await probe.send('Runtime.evaluate', { expression: 'document.visibilityState', returnByValue: true });
-      if (!firstLive) firstLive = p;
-      if (r.result.value === 'visible') { if (pages.length > 1) console.error(`# ${pages.length} page targets; using visible one (${p.id})`); return p; }
+      if (r.result.value === 'visible') {
+        if (firstLive) await closeProbeWebSocket(firstLive.connection.ws);
+        if (pages.length > 1) console.error(`# ${pages.length} page targets; using visible one (${p.id})`);
+        keepConnection = true;
+        return { page: p, connection: probe };
+      }
+      if (!firstLive) {
+        firstLive = { page: p, connection: probe };
+        keepConnection = true;
+      }
     } catch (e) {
       // dead target — expected after an Activity recreation
     } finally {
-      // Do not open the active session until Chromium and the relay have
-      // completed the probe WebSocket close handshake.
-      await closeProbeWebSocket(probe.ws);
+      if (!keepConnection) await closeProbeWebSocket(probe.ws);
     }
   }
   if (firstLive) {
-    if (pages.length > 1) console.error(`# ${pages.length} page targets, none visible; using ${firstLive.id} (pin with --target)`);
+    if (pages.length > 1) console.error(`# ${pages.length} page targets, none visible; using ${firstLive.page.id} (pin with --target)`);
     return firstLive;
   }
   throw new Error(`${pages.length} page targets, none answered. ids: ${pages.map((p) => p.id).join(', ')}`);
@@ -359,16 +370,18 @@ try {
 if (!/^[0-9a-fA-F]{64}$/.test(CDP_TOKEN)) {
   throw new Error('Invalid CDP token. Re-enter it with: ./cdp-webview.sh auth');
 }
-const target = await chooseTarget(await pageTargets());
+const selected = await chooseTarget(await pageTargets());
+const target = selected.page;
+const c = selected.connection;
 if (opt.list) {
   const list = await (await fetch(withToken(`${BASE}/json/list`))).json();
   console.error(`# via ${BASE}`);
   for (const t of list) console.log(`${t.type}\t${t.id}\t${(t.title || '').slice(0, 40)}\t${(t.url || '').slice(0, 70)}`);
+  await closeProbeWebSocket(c.ws);
   process.exit(0);
 }
 if (process.env.DEBUG) console.error(`target ${target.id} — ${target.title || '(untitled)'} — ${target.url}`);
 
-const c = connect(target.webSocketDebuggerUrl);
 await c.ready;
 await c.send('Runtime.enable');
 await c.send('Page.enable');
