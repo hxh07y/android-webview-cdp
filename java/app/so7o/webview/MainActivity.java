@@ -138,6 +138,26 @@ public class MainActivity extends Activity {
         }
     }
 
+    /**
+     * External apps can use so7o://focus to bring this existing WebView
+     * activity to the foreground without creating or navigating another tab.
+     */
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        if (Intent.ACTION_VIEW.equals(intent.getAction())
+                && intent.getData() != null
+                && "so7o".equals(intent.getData().getScheme())
+                && "focus".equals(intent.getData().getHost())) {
+            Log.i(TAG, "Focus deep link received; reusing the existing WebView session");
+            if (web != null) {
+                web.onResume();
+                web.resumeTimers();
+            }
+        }
+    }
+
     @Override
     public void onBackPressed() {
         if (web != null && web.canGoBack()) {
