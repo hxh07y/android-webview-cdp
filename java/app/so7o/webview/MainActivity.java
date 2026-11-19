@@ -7,6 +7,7 @@ import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.SharedPreferences;
+import android.net.Uri;
 import android.content.Intent;
 import android.os.Bundle;
 import android.util.Log;
@@ -64,7 +65,13 @@ public class MainActivity extends Activity {
         s.setDomStorageEnabled(true);
         web.setWebViewClient(new WebViewClient());
         web.addJavascriptInterface(new Bridge(), "so7o");
-        web.loadUrl("file:///android_asset/index.html");
+        String initialOuoUrl = getOuoUrlFromIntent(getIntent());
+        if (initialOuoUrl != null) {
+            Log.i(TAG, "Opening OUO verification URL from cold-start deep link");
+            web.loadUrl(initialOuoUrl);
+        } else {
+            web.loadUrl("file:///android_asset/index.html");
+        }
 
         // Publish the DevTools socket on authenticated loopback only.
         new RelayServer().start();
@@ -150,11 +157,40 @@ public class MainActivity extends Activity {
                 && intent.getData() != null
                 && "so7o".equals(intent.getData().getScheme())
                 && "focus".equals(intent.getData().getHost())) {
-            Log.i(TAG, "Focus deep link received; reusing the existing WebView session");
+            Log.i(TAG, "Focus deep link received");
             if (web != null) {
                 web.onResume();
                 web.resumeTimers();
+                String ouoUrl = getOuoUrlFromIntent(intent);
+                if (ouoUrl != null) {
+                    Log.i(TAG, "Navigating existing WebView to OUO verification URL");
+                    web.loadUrl(ouoUrl);
+                } else {
+                    Log.i(TAG, "No OUO URL supplied; keeping the current WebView page");
+                }
             }
+        }
+    }
+
+    private String getOuoUrlFromIntent(Intent intent) {
+        if (intent == null || intent.getData() == null) return null;
+        Uri data = intent.getData();
+        String candidate = data.getQueryParameter("url");
+        if (candidate == null || candidate.trim().isEmpty()) return null;
+        try {
+            Uri target = Uri.parse(candidate);
+            String scheme = target.getScheme();
+            String host = target.getHost();
+            if (!"https".equalsIgnoreCase(scheme) || host == null) return null;
+            if (!("ouo.press".equalsIgnoreCase(host)
+                    || host.toLowerCase(java.util.Locale.US).endsWith(".ouo.press"))) {
+                Log.w(TAG, "Rejected non-OUO deep-link target");
+                return null;
+            }
+            return target.toString();
+        } catch (Exception error) {
+            Log.w(TAG, "Invalid OUO URL in deep link", error);
+            return null;
         }
     }
 
